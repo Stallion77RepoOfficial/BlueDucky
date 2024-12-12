@@ -43,7 +43,7 @@ def get_target_address():
 
 def restart_bluetooth_daemon():
     run(["sudo", "service", "bluetooth", "restart"])
-    time.sleep(0.5)
+    time.sleep(5)
 
 def run(command):
     assert(isinstance(command, list))
